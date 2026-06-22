@@ -1,198 +1,67 @@
-//
-//  RemoteLogger.swift
-//  Perfect-Logger
-//
-//  Created by Jonathan Guthrie on 2017-01-09.
-//	Copyright (C) 2015 PerfectlySoft, Inc.
-//
-//===----------------------------------------------------------------------===//
-//
-// This source file is part of the Perfect.org open source project
-//
-// Copyright (c) 2015 - 2016 PerfectlySoft Inc. and the Perfect project authors
-// Licensed under Apache License v2.0
-//
-// See http://perfect.org/licensing.html for license information
-//
-//===----------------------------------------------------------------------===//
-//
-
-
-import PerfectLib
-import PerfectCURL
-import cURL
 import Foundation
 
-
+/// Posts log events to a remote HTTP endpoint. All configuration via static properties.
+/// Network calls are fire-and-forget (non-blocking).
 public struct RemoteLogger {
-	public static var logServer = "http://localhost:8100"
-	public static var token = ""
-	public static var appid = ""
-	
-	/// Whether or not to even off the log messages
-	/// If set to true log messages will be inline with each other
-	public static var even = false
-	
-	static let consoleEcho = ConsoleLogger()
-	
-	fileprivate init(){}
-	
-	static func log(priority: String, _ detail: [String:Any], _ eventid: String) throws {
-		let useragent = "PerfectServer2.0"
-		let logAPI = "/api/v1/log/"
-		var obj = [String:Any]()
-		obj["appuuid"] = RemoteLogger.appid
-		obj["eventid"] = eventid
-		obj["loglevel"] = priority
-		obj["detail"] = detail
-		var body = ""
-		do {
-			try body = obj.jsonEncodedString()
-		} catch {
-			throw error
-		}
-		
-		var url = RemoteLogger.logServer + logAPI + RemoteLogger.token
-		
-		let curlObject = CURL(url: url)
-		curlObject.setOption(CURLOPT_HTTPHEADER, s: "Accept: application/json")
-		curlObject.setOption(CURLOPT_HTTPHEADER, s: "Cache-Control: no-cache")
-		curlObject.setOption(CURLOPT_USERAGENT, s: useragent)
-		
-		
-		if !body.isEmpty {
-			let byteArray = [UInt8](body.utf8)
-			curlObject.setOption(CURLOPT_POST, int: 1)
-			curlObject.setOption(CURLOPT_POSTFIELDSIZE, int: byteArray.count)
-			curlObject.setOption(CURLOPT_COPYPOSTFIELDS, v: UnsafeMutablePointer(mutating: byteArray))
-			curlObject.setOption(CURLOPT_HTTPHEADER, s: "Content-Type: application/json")
-		}
-		
-		
-		
-		var header = [UInt8]()
-		var bodyIn = [UInt8]()
-		
-		var code = 0
-		var data = [String: Any]()
-		var raw = [String: Any]()
-		
-		var perf = curlObject.perform()
-		defer { curlObject.close() }
-		
-		while perf.0 {
-			if let h = perf.2 {
-				header.append(contentsOf: h)
-			}
-			if let b = perf.3 {
-				bodyIn.append(contentsOf: b)
-			}
-			perf = curlObject.perform()
-		}
-		if let h = perf.2 {
-			header.append(contentsOf: h)
-		}
-		if let b = perf.3 {
-			bodyIn.append(contentsOf: b)
-		}
-		let _ = perf.1
-		
-		// no need to parse. It's really just one way...
-		
-	}
-	
-	/// Logs a [DEBUG] message to the log server.
-	/// Also echoes the message to the console.
-	/// Specifiy a logFile parameter to direct the logging to a file other than the default.
-	/// Takes an optional "eventid" param, which helps to link related events together.
-	/// Returns an eventid string. If one was supplied, it will be echoed back, else a new one will be generated for reuse.
-	@discardableResult
-	public static func debug(_ detail: [String:Any] = [String:Any](), eventid: String = Foundation.UUID().uuidString, evenIdents: Bool = even) -> String {
-		do {
-			consoleEcho.debug(message: try detail.jsonEncodedString(), evenIdents)
-			try RemoteLogger.log(priority: "debug", detail, eventid)
-		} catch {
-			consoleEcho.error(message: "\(error)", evenIdents)
-		}
-		return eventid
-	}
-	
-	/// Logs a [INFO] message to the log server.
-	/// Also echoes the message to the console.
-	/// Specifiy a logFile parameter to direct the logging to a file other than the default.
-	/// Takes an optional "eventid" param, which helps to link related events together.
-	/// Returns an eventid string. If one was supplied, it will be echoed back, else a new one will be generated for reuse.
-	@discardableResult
-	public static func info(_ detail: [String:Any] = [String:Any](), eventid: String = Foundation.UUID().uuidString, evenIdents: Bool = even) -> String {
-		do {
-			consoleEcho.info(message: try detail.jsonEncodedString(), evenIdents)
-			try RemoteLogger.log(priority: "info", detail, eventid)
-		} catch {
-			consoleEcho.error(message: "\(error)", evenIdents)
-		}
-		return eventid
-	}
-	
-	/// Logs a [WARNING] message to the log server.
-	/// Also echoes the message to the console.
-	/// Specifiy a logFile parameter to direct the logging to a file other than the default.
-	/// Takes an optional "eventid" param, which helps to link related events together.
-	/// Returns an eventid string. If one was supplied, it will be echoed back, else a new one will be generated for reuse.
-	@discardableResult
-	public static func warning(_ detail: [String:Any] = [String:Any](), eventid: String = Foundation.UUID().uuidString, evenIdents: Bool = even) -> String {
-		do {
-			consoleEcho.warning(message: try detail.jsonEncodedString(), evenIdents)
-			try RemoteLogger.log(priority: "warning", detail, eventid)
-		} catch {
-			consoleEcho.error(message: "\(error)", evenIdents)
-		}
-		return eventid
-	}
-	
-	/// Logs a [ERROR] message to the log server.
-	/// Also echoes the message to the console.
-	/// Specifiy a logFile parameter to direct the logging to a file other than the default.
-	/// Takes an optional "eventid" param, which helps to link related events together.
-	/// Returns an eventid string. If one was supplied, it will be echoed back, else a new one will be generated for reuse.
-	@discardableResult
-	public static func error(_ detail: [String:Any] = [String:Any](), eventid: String = Foundation.UUID().uuidString, evenIdents: Bool = even) -> String {
-		do {
-			consoleEcho.error(message: try detail.jsonEncodedString(), evenIdents)
-			try RemoteLogger.log(priority: "error", detail, eventid)
-		} catch {
-			consoleEcho.error(message: "\(error)", evenIdents)
-		}
-		return eventid
-	}
-	
-	/// Logs a [CRIICAL] message to the log server.
-	/// Also echoes the message to the console.
-	/// Specifiy a logFile parameter to direct the logging to a file other than the default.
-	/// Takes an optional "eventid" param, which helps to link related events together.
-	/// Returns an eventid string. If one was supplied, it will be echoed back, else a new one will be generated for reuse.
-	@discardableResult
-	public static func critical(_ detail: [String:Any] = [String:Any](), eventid: String = Foundation.UUID().uuidString, evenIdents: Bool = even) -> String {
-		do {
-			consoleEcho.critical(message: try detail.jsonEncodedString(), evenIdents)
-			try RemoteLogger.log(priority: "critical", detail, eventid)
-		} catch {
-			consoleEcho.error(message: "\(error)", evenIdents)
-		}
-		return eventid
-	}
-	
-	/// Logs a [EMERG] message to the log server.
-	/// Also echoes the message to the console.
-	/// Specifiy a logFile parameter to direct the logging to a file other than the default.
-	/// Takes an optional "eventid" param, which helps to link related events together.
-	public static func terminal(_ detail: [String:Any] = [String:Any](), eventid: String = Foundation.UUID().uuidString, evenIdents: Bool = even) -> Never {
-		do {
-			consoleEcho.critical(message: try detail.jsonEncodedString(), evenIdents)
-			try RemoteLogger.log(priority: "emerg", detail, eventid)
-			let str = try detail.jsonEncodedString()
-			fatalError(str)
-		} catch {
-			fatalError("Unspecfified fatal error. Additionally the object failed to render as JSON.")
-		}
-	}
+    private init() {}
+
+    /// The remote server base URL (e.g. `"http://loghost.example.com"`).
+    public nonisolated(unsafe) static var logServer = ""
+
+    /// Bearer token included in the request URL path.
+    public nonisolated(unsafe) static var token = ""
+
+    /// Minimum priority to send remotely.
+    public nonisolated(unsafe) static var threshold: LogPriority = .debug
+
+    public nonisolated(unsafe) static var even = false
+
+    @discardableResult
+    public static func debug(_ args: String, eventid: String = UUID().uuidString) -> String {
+        post(priority: .debug, args, eventid); return eventid
+    }
+    @discardableResult
+    public static func info(_ args: String, eventid: String = UUID().uuidString) -> String {
+        post(priority: .info, args, eventid); return eventid
+    }
+    @discardableResult
+    public static func warning(_ args: String, eventid: String = UUID().uuidString) -> String {
+        post(priority: .warning, args, eventid); return eventid
+    }
+    @discardableResult
+    public static func error(_ args: String, eventid: String = UUID().uuidString) -> String {
+        post(priority: .error, args, eventid); return eventid
+    }
+    @discardableResult
+    public static func critical(_ args: String, eventid: String = UUID().uuidString) -> String {
+        post(priority: .critical, args, eventid); return eventid
+    }
+    public static func terminal(_ args: String, eventid: String = UUID().uuidString) -> Never {
+        post(priority: .terminal, args, eventid)
+        fatalError(args)
+    }
+
+    private static func post(priority: LogPriority, _ args: String, _ eventid: String) {
+        guard priority >= threshold,
+              !logServer.isEmpty, !token.isEmpty else { return }
+
+        let server = logServer
+        let tok = token
+        let payload: [String: Any] = [
+            "priority": priority.stringRepresentation(even: even),
+            "eventid": eventid,
+            "message": args,
+            "timestamp": ISO8601DateFormatter().string(from: Date()),
+        ]
+
+        Task.detached {
+            guard let url = URL(string: "\(server)/api/v1/log/\(tok)") else { return }
+            guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body
+            _ = try? await URLSession.shared.data(for: request)
+        }
+    }
 }
