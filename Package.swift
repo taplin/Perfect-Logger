@@ -7,9 +7,15 @@ let package = Package(
     products: [
         .library(name: "PerfectLogger", targets: ["PerfectLogger"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
+    ],
     targets: [
         .target(
             name: "PerfectLogger",
+            dependencies: [
+                .product(name: "Logging", package: "swift-log"),
+            ],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
