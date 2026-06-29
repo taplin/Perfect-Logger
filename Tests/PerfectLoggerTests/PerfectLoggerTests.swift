@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import Logging
 @testable import PerfectLogger
 
 @Suite(.serialized)
@@ -9,87 +10,107 @@ struct PerfectLoggerTests {
         NSTemporaryDirectory() + "PerfectLoggerTests_\(UUID().uuidString).txt"
     }
 
-    @Test func basicFileLog() throws {
+    /// Builds a `Logger` backed by a `FileLogHandler` at `path`, bypassing the
+    /// process-global `LoggingSystem.bootstrap` (which can only run once).
+    private func fileLogger(_ path: String, options: LogOptions = .default, level: Logger.Level = .debug) -> Logger {
+        Logger(label: "test") { _ in
+            var h = FileLogHandler(label: "test", path: path, options: options)
+            h.logLevel = level
+            return h
+        }
+    }
+
+    @Test func fileHandlerWritesMessage() throws {
         let path = tmpLog()
         defer { try? FileManager.default.removeItem(atPath: path) }
 
-        LogFile.critical("test critical message", logFile: path)
+        var log = fileLogger(path)
+        log[metadataKey: "eventid"] = "evt-123"
+        log.critical("boom")
 
         let contents = try String(contentsOfFile: path, encoding: .utf8)
-        #expect(contents.contains("test critical message"))
+        #expect(contents.contains("boom"))
         #expect(contents.contains("[CRITICAL]"))
+        #expect(contents.contains("evt-123"))
     }
 
-    @Test func eventIdEchoed() throws {
+    @Test func allLevelsWrite() throws {
         let path = tmpLog()
         defer { try? FileManager.default.removeItem(atPath: path) }
 
-        let eid = LogFile.critical("first message", logFile: path)
-        LogFile.critical("second message", eventid: eid, logFile: path)
+        let log = fileLogger(path)
+        log.debug("msg-debug")
+        log.info("msg-info")
+        log.warning("msg-warning")
+        log.error("msg-error")
+        log.critical("msg-critical")
 
         let contents = try String(contentsOfFile: path, encoding: .utf8)
-        let occurrences = contents.components(separatedBy: eid).count - 1
-        #expect(occurrences == 2)
+        for token in ["msg-debug", "msg-info", "msg-warning", "msg-error", "msg-critical"] {
+            #expect(contents.contains(token))
+        }
     }
 
-    @Test func allLevelsWriteToFile() throws {
+    @Test func levelFiltersLowMessages() throws {
         let path = tmpLog()
         defer { try? FileManager.default.removeItem(atPath: path) }
 
-        LogFile.debug("msg-debug", logFile: path)
-        LogFile.info("msg-info", logFile: path)
-        LogFile.warning("msg-warning", logFile: path)
-        LogFile.error("msg-error", logFile: path)
-        LogFile.critical("msg-critical", logFile: path)
-
-        let contents = try String(contentsOfFile: path, encoding: .utf8)
-        #expect(contents.contains("msg-debug"))
-        #expect(contents.contains("msg-info"))
-        #expect(contents.contains("msg-warning"))
-        #expect(contents.contains("msg-error"))
-        #expect(contents.contains("msg-critical"))
-    }
-
-    @Test func thresholdFiltersLow() throws {
-        let path = tmpLog()
-        defer { try? FileManager.default.removeItem(atPath: path) }
-        let savedThreshold = LogFile.threshold
-        defer { LogFile.threshold = savedThreshold }
-
-        LogFile.threshold = .error
-        LogFile.debug("should-not-appear", logFile: path)
-        LogFile.info("should-not-appear-either", logFile: path)
-        LogFile.error("should-appear", logFile: path)
+        let log = fileLogger(path, level: .error)
+        log.debug("should-not-appear")
+        log.info("should-not-appear-either")
+        log.error("should-appear")
 
         let contents = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
         #expect(!contents.contains("should-not-appear"))
         #expect(contents.contains("should-appear"))
     }
 
-    @Test func noOptionsWritesMessageOnly() throws {
+    @Test func noneOptionWritesMessageOnly() throws {
         let path = tmpLog()
         defer { try? FileManager.default.removeItem(atPath: path) }
-        let savedOptions = LogFile.options
-        defer { LogFile.options = savedOptions }
 
-        LogFile.options = .none
-        LogFile.error("bare message", logFile: path)
+        let log = fileLogger(path, options: .none)
+        log.error("bare message")
 
         let contents = try String(contentsOfFile: path, encoding: .utf8)
         #expect(contents.trimmingCharacters(in: .whitespacesAndNewlines) == "bare message")
     }
 
-    @Test func multipleWritesAppend() throws {
+    @Test func appendsAcrossWrites() throws {
         let path = tmpLog()
         defer { try? FileManager.default.removeItem(atPath: path) }
 
-        LogFile.error("line-one", logFile: path)
-        LogFile.error("line-two", logFile: path)
-        LogFile.error("line-three", logFile: path)
+        let log = fileLogger(path)
+        log.error("line-one")
+        log.error("line-two")
+        log.error("line-three")
 
         let contents = try String(contentsOfFile: path, encoding: .utf8)
-        #expect(contents.contains("line-one"))
-        #expect(contents.contains("line-two"))
-        #expect(contents.contains("line-three"))
+        for token in ["line-one", "line-two", "line-three"] {
+            #expect(contents.contains(token))
+        }
+    }
+
+    @Test func logFileFacadeReturnsAndReusesEventId() throws {
+        let path = tmpLog()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+
+        // Point the façade's logger at our temp file.
+        LogFile.logger = fileLogger(path)
+
+        let eid = LogFile.error("first message")
+        LogFile.error("second message", eventid: eid)
+
+        let contents = try String(contentsOfFile: path, encoding: .utf8)
+        let occurrences = contents.components(separatedBy: eid).count - 1
+        #expect(occurrences == 2)
+        #expect(contents.contains("first message"))
+        #expect(contents.contains("second message"))
+    }
+
+    @Test func priorityMapsToSwiftLogLevel() {
+        #expect(LogPriority.debug.level == .debug)
+        #expect(LogPriority.warning.level == .warning)
+        #expect(LogPriority.terminal.level == .critical)
     }
 }
